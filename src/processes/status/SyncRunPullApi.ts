@@ -66,9 +66,10 @@ import { listDeviceReaders } from '../../services/client/calls/listDeviceReaders
 import { isSiteMonitored } from '../../services/client/calls/isSiteMonitored';
 import { listCarriers } from '../../services/client/calls/listCarriers';
 import { listEvents } from '../../services/client/calls/listEvents';
+import { listAlarms } from '../../services/client/calls/listAlarms';
 import { listCarrierGroups } from '../../services/client/calls/listCarrierGroups';
 import { recordToObject } from '../../utils/recordToObj';
-import { IOccupant, spinalOccupantService} from "spinal-model-occupant"
+import { IOccupant, spinalOccupantService } from "spinal-model-occupant"
 
 
 /**
@@ -131,13 +132,13 @@ export class SyncRunPullApi {
     throw new Error(`Context with name ${name} Not found`);
   }
 
-  async initRequiredNodes() : Promise<void> {
+  async initRequiredNodes(): Promise<void> {
     this.nwContext = await this.getContextByName(process.env.NETWORK_NAME);
 
 
     this.nwVirtual = (await this.nwContext.getChildrenInContext()).find((node) => node.getName().get() === process.env.VIRTUAL_NETWORK_NAME);
     if (!this.nwVirtual) throw new Error('Virtual Network Node Not found');
-    
+
     SpinalGraphService._addNode(this.nwVirtual);
 
   }
@@ -148,8 +149,8 @@ export class SyncRunPullApi {
     endpointName: string,
     initialValue: number | string | boolean,
     unit = ''
-  ) : Promise<SpinalNode<any>> {
-    
+  ): Promise<SpinalNode<any>> {
+
     const endpointNodeModel = new InputDataEndpoint(
       endpointName,
       initialValue ?? 0,
@@ -160,21 +161,21 @@ export class SyncRunPullApi {
 
     const endpointInfo = await this.nwService.createNewBmsEndpoint(deviceNode.getId().get(), endpointNodeModel);
 
-    const realNode =  SpinalGraphService.getRealNode(endpointInfo.id.get());
+    const realNode = SpinalGraphService.getRealNode(endpointInfo.id.get());
     // SpinalGraphService._addNode(realNode);
 
 
     await this.timeseriesService.pushFromEndpoint(
-          endpointInfo.id.get(),
-          initialValue as number
+      endpointInfo.id.get(),
+      initialValue as number
     );
     await attributeService.updateAttribute(
-        realNode,
-        'default',
-        'timeSeries maxDay',
-        { value: '14' }
-      );
-      return realNode;
+      realNode,
+      'default',
+      'timeSeries maxDay',
+      { value: '14' }
+    );
+    return realNode;
   }
 
 
@@ -218,11 +219,11 @@ export class SyncRunPullApi {
   //   }
   // }
 
-  async createReaderDevices(readers : any []){
+  async createReaderDevices(readers: any[]) {
     const existingDevices = await this.nwVirtual.getChildrenInContext(this.nwContext);
-    for ( const reader of readers) {
+    for (const reader of readers) {
       let deviceNode = existingDevices.find((node) => node.getName().get() === reader.uid);
-      if(!deviceNode) {
+      if (!deviceNode) {
         console.log(`Device for Reader ${reader.uid} not found, creating...`);
         deviceNode = await this.createDevice(reader.uid, 'deviceReader');
         await attributeService.createOrUpdateAttrsAndCategories(
@@ -234,56 +235,56 @@ export class SyncRunPullApi {
             description: reader.description || '',
             creationdate: reader.creationDate || '',
             modificationdate: reader.modificationDate || '',
-            doors : reader.doors || ''
+            doors: reader.doors || ''
           }
-          
+
         );
       }
     }
 
   }
 
-  async createMonitoringDeviceAndEndpoint(isMonitored: boolean){
+  async createMonitoringDeviceAndEndpoint(isMonitored: boolean) {
     const existingDevices = await this.nwVirtual.getChildrenInContext(this.nwContext);
     let deviceNode = existingDevices.find((node) => node.getName().get() === 'SiteMonitoringDevice');
 
-    if(!deviceNode) {
-        deviceNode = await this.createDevice('SiteMonitoringDevice', 'deviceMonitoring');
-        const endpointNode = await this.createEndpoint(deviceNode, 'isSiteMonitored', isMonitored);
-      }
+    if (!deviceNode) {
+      deviceNode = await this.createDevice('SiteMonitoringDevice', 'deviceMonitoring');
+      const endpointNode = await this.createEndpoint(deviceNode, 'isSiteMonitored', isMonitored);
+    }
 
   }
 
-  async createOccupantData(carriers : any []){
+  async createOccupantData(carriers: any[]) {
     const carrierContext = await spinalOccupantService.createOrGetContext(process.env.CARRIER_CONTEXT_NAME);
     const occupants = await spinalOccupantService.getOccupants(process.env.CARRIER_CONTEXT_NAME)
-    for (const carrier of carriers ) {
-      let foundOcc = occupants.find( (occ) => occ.getName().get() === carrier.uid);
-      if(!foundOcc) {
-        const infoOcc : IOccupant = {
+    for (const carrier of carriers) {
+      let foundOcc = occupants.find((occ) => occ.getName().get() === carrier.uid);
+      if (!foundOcc) {
+        const infoOcc: IOccupant = {
           first_name: carrier.firstname || "",
           last_name: carrier.lastname || "",
           occupantId: carrier.uid,
           email: carrier.email || '',
-          serviceName:  '',
+          serviceName: '',
           companyName: '',
           phoneNumber: carrier.telephone || ''
         }
-        foundOcc = await spinalOccupantService.addOccupant(infoOcc,process.env.CARRIER_CONTEXT_NAME);
+        foundOcc = await spinalOccupantService.addOccupant(infoOcc, process.env.CARRIER_CONTEXT_NAME);
 
         await serviceDocumentation.createOrUpdateAttrsAndCategories(foundOcc, 'ARD',
           {
-            uid : carrier.uid,
-            rid : carrier.rid || "",
-            username : carrier.username || "",
-            firstname : carrier.firstname || "",
-            lastname : carrier.lastname || "",
-            disabled : carrier.disabled,
-            begindate : carrier.begindate || "",
-            enddate : carrier.enddate || "",
-            telephone : carrier.telephone || "",
-            email : carrier.email || "",
-            usergroup : carrier.usergroup ?? "",
+            uid: carrier.uid,
+            rid: carrier.rid || "",
+            username: carrier.username || "",
+            firstname: carrier.firstname || "",
+            lastname: carrier.lastname || "",
+            disabled: carrier.disabled,
+            begindate: carrier.begindate || "",
+            enddate: carrier.enddate || "",
+            telephone: carrier.telephone || "",
+            email: carrier.email || "",
+            usergroup: carrier.usergroup ?? "",
           }
         )
       }
@@ -295,7 +296,7 @@ export class SyncRunPullApi {
 
 
 
-  async createDevice(deviceName : string,type: string) {
+  async createDevice(deviceName: string, type: string) {
     const deviceNodeModel = new InputDataDevice(deviceName, type);
     const res = await this.nwService.createNewBmsDevice(this.nwVirtual.getId().get(), deviceNodeModel);
     const createdNode = SpinalGraphService.getRealNode(res.id.get());
@@ -304,44 +305,44 @@ export class SyncRunPullApi {
   }
 
 
-  async updateEnergyCounterDevices(energyCounterData : IEquipment[]){
+  async updateEnergyCounterDevices(energyCounterData: IEquipment[]) {
     const existingDevices = await this.nwVirtual.getChildrenInContext(this.nwContext);
     for (const ec of existingDevices) {
       const matchingEc = energyCounterData.find((apiEc) => {
         return apiEc.name === ec.getName().get();
       });
-      if(!matchingEc) {
+      if (!matchingEc) {
         continue;
       }
 
       const endpoints = await ec.getChildren('hasBmsEndpoint');
       const connectedEndpoint = endpoints.find((ep) => ep.getName().get() === 'connected');
-      if(connectedEndpoint) {
+      if (connectedEndpoint) {
         await this.updateEndpoint(connectedEndpoint, matchingEc.connected);
       }
       // update endpoints for l1 , l2 , l3 currents and energy consumptions
       const currentL1Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L1');
-      if(currentL1Endpoint) {
+      if (currentL1Endpoint) {
         await this.updateEndpoint(currentL1Endpoint, matchingEc.values.currents.l1.value);
       }
       const currentL2Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L2');
-      if(currentL2Endpoint) {
+      if (currentL2Endpoint) {
         await this.updateEndpoint(currentL2Endpoint, matchingEc.values.currents.l2.value);
       }
       const currentL3Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L3');
-      if(currentL3Endpoint) {
+      if (currentL3Endpoint) {
         await this.updateEndpoint(currentL3Endpoint, matchingEc.values.currents.l3.value);
       }
       const energyConsumptionEndpoint = endpoints.find((ep) => ep.getName().get() === 'Energy_Consumption');
-      if(energyConsumptionEndpoint) {
+      if (energyConsumptionEndpoint) {
         await this.updateEndpoint(energyConsumptionEndpoint, matchingEc.values.energy.value);
       }
-      
+
     }
   }
 
 
-  async updateEndpoint(endpointNode: SpinalNode<any>, newValue: number | string | boolean){
+  async updateEndpoint(endpointNode: SpinalNode<any>, newValue: number | string | boolean) {
     SpinalGraphService._addNode(endpointNode);
     await this.nwService.setEndpointValue(endpointNode.getId().get(), newValue);
     console.log(`Updated endpoint ${endpointNode.getName().get()} with value ${newValue}`);
@@ -351,7 +352,7 @@ export class SyncRunPullApi {
     console.log('Initiating SyncRunPull');
     try {
 
-      await this.nwService.init(this.graph, {contextName : process.env.NETWORK_NAME, contextType :"Network", networkName:process.env.VIRTUAL_NETWORK_NAME, networkType:"NetworkVirtual"});
+      await this.nwService.init(this.graph, { contextName: process.env.NETWORK_NAME, contextType: "Network", networkName: process.env.VIRTUAL_NETWORK_NAME, networkType: "NetworkVirtual" });
       await this.initRequiredNodes();
       console.log('Required nodes initialized');
 
@@ -384,11 +385,22 @@ export class SyncRunPullApi {
       const eventRecords = await listEvents();
       console.log('Events fetched:', eventRecords.count);
       const eventArrays = eventRecords.records?.item ?? [] // all events
-      
+
       const events = eventArrays.map(eventArray =>
         recordToObject(eventArray.item)
       );
       console.log('Events:', events);
+
+
+
+      // const alarmRecords = await listAlarms();
+      // console.log('Alarms fetched:', alarmRecords.count);
+      // const alarmArrays = alarmRecords.records?.item ?? [] // all alarms
+
+      // const alarms = alarmArrays.map(alarmArray =>
+      //   recordToObject(alarmArray.item)
+      // );
+      // console.log('Alarms:', alarms);
 
 
 
@@ -398,7 +410,7 @@ export class SyncRunPullApi {
       // const carrierGroups = carrierGroupArrays.map(carrierGroupArray =>
       //   recordToObject(carrierGroupArray.item)
       // );
-      
+
       // console.log('Carrier Groups:', carrierGroups);
 
 

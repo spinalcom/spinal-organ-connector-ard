@@ -4,7 +4,7 @@ export class ArdSupervisionClient {
   private static instance: ArdSupervisionClient;
   private client!: soap.Client;
 
-  private constructor() {}
+  private constructor() { }
 
   static async getInstance(): Promise<ArdSupervisionClient> {
     if (!this.instance) {
