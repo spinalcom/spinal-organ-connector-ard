@@ -1,5 +1,6 @@
 import { ArdSession } from '../ArdSession';
 import { ArdSupervisionClient } from '../ArdSupervisionClient';
+import { ardPaginatedFetch } from '../../../utils/ardPaginatedFetch';
 
 
 export async function listEvents() {
@@ -12,14 +13,14 @@ export async function listEvents() {
   const [res] = await client.ListEventsAsync({
     sessionId,
     criteria: {
-    item: [
-      {
-        field: 'date',
-        operator : "!=",
-        value:  String(Math.floor(Date.now()/1000))
-      }
-    ],
-  },
+      item: [
+        {
+          field: 'date',
+          operator: "<",
+          value: String(Date.now())
+        }
+      ],
+    },
     pagination: {
       page: 1,
       pageSize: 100,
@@ -30,4 +31,50 @@ export async function listEvents() {
 
   const result = res.listEventsReturn;
   return result;
+}
+
+export async function getAllEvents() {
+  const session = ArdSession.getInstance();
+  const sessionId = await session.getSessionId();
+
+  const supervisionClient = await ArdSupervisionClient.getInstance();
+  const client = supervisionClient.getClient();
+
+  const items: any[] = await ardPaginatedFetch(
+    async (page, pageSize) => {
+      const [res] = await client.ListEventsAsync({
+        sessionId,
+        criteria: {
+          item: [
+            {
+              field: 'date',
+              operator: "<",
+              value: String(Date.now())
+            },
+            {
+              field: 'accesslog',
+              operator: "=",
+              value: 1
+            }
+
+
+          ],
+        },
+        pagination: {
+          page,
+          pageSize,
+        },
+      });
+
+      return res.listEventsReturn;
+    },
+    100
+  );
+
+  return {
+    count: items.length,
+    records: {
+      item: items,
+    },
+  };
 }

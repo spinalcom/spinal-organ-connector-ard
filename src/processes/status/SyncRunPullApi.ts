@@ -65,7 +65,7 @@ import { listReaders } from '../../services/client/calls/listAccessPoint';
 import { listDeviceReaders } from '../../services/client/calls/listDeviceReaders';
 import { isSiteMonitored } from '../../services/client/calls/isSiteMonitored';
 import { listCarriers } from '../../services/client/calls/listCarriers';
-import { listEvents } from '../../services/client/calls/listEvents';
+import { listEvents, getAllEvents } from '../../services/client/calls/listEvents';
 import { listAlarms } from '../../services/client/calls/listAlarms';
 import { listCarrierGroups } from '../../services/client/calls/listCarrierGroups';
 import { recordToObject } from '../../utils/recordToObj';
@@ -382,16 +382,36 @@ export class SyncRunPullApi {
 
 
 
-      const eventRecords = await listEvents();
+      const eventRecords = await getAllEvents();
       console.log('Events fetched:', eventRecords.count);
       const eventArrays = eventRecords.records?.item ?? [] // all events
 
       const events = eventArrays.map(eventArray =>
         recordToObject(eventArray.item)
       );
-      console.log('Events:', events);
+
+      console.log('Total events:', events.length);
+
+      // Group events by their eventtype
+      const eventsByType: { [key: string]: any[] } = {};
+      for (const event of events) {
+        const type = event.eventtype;
+        if (!eventsByType[type]) {
+          eventsByType[type] = [];
+        }
+        eventsByType[type].push(event);
+      }
 
 
+      // Now you can use eventsByType, where each key is an eventtype and the value is an array of events of that type
+      //console.log('Grouped events by eventtype:', eventsByType);
+      for (const [eventType, eventsArr] of Object.entries(eventsByType)) {
+        const count = eventsArr.length;
+        const description = eventsArr[0]?.description || 'No description';
+        console.log(`Event type: ${eventType}, count: ${count}, example description: ${description}`);
+      }
+
+      console.log(eventsByType)
 
       // const alarmRecords = await listAlarms();
       // console.log('Alarms fetched:', alarmRecords.count);
