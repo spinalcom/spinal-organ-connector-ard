@@ -33,7 +33,7 @@ export async function listEvents() {
   return result;
 }
 
-export async function getAllEvents() {
+export async function getAllEvents(after: number = 0) {
   const session = ArdSession.getInstance();
   const sessionId = await session.getSessionId();
 
@@ -48,8 +48,8 @@ export async function getAllEvents() {
           item: [
             {
               field: 'date',
-              operator: "<",
-              value: String(Date.now())
+              operator: ">",
+              value: String(after)
             },
             {
               field: 'accesslog',

@@ -226,19 +226,16 @@ export class SyncRunPullApi {
       if (!deviceNode) {
         console.log(`Device for Reader ${reader.uid} not found, creating...`);
         deviceNode = await this.createDevice(reader.uid, 'deviceReader');
-        await attributeService.createOrUpdateAttrsAndCategories(
-          deviceNode,
-          'default',
-          {
-            variable: 'Reader',
-            uid: reader.uid,
-            description: reader.description || '',
-            creationdate: reader.creationDate || '',
-            modificationdate: reader.modificationDate || '',
-            doors: reader.doors || ''
-          }
-
-        );
+        await attributeService.createOrUpdateAttrsAndCategories(deviceNode, 'default', {
+          variable: 'Reader',
+          uid: reader.uid,
+          description: reader.description || '',
+          creationdate: reader.creationDate || '',
+          modificationdate: reader.modificationDate || '',
+          doors: reader.doors || ''
+        });
+        const DG = await this.createEndpoint(deviceNode, "Access_Granted", 0)
+        const DD = await this.createEndpoint(deviceNode, "Access_Denied", 0)
       }
     }
 
@@ -253,6 +250,58 @@ export class SyncRunPullApi {
       const endpointNode = await this.createEndpoint(deviceNode, 'isSiteMonitored', isMonitored);
     }
 
+  }
+
+  async updateEndpointsFromEvents(events: any[]) {
+    const deviceNodes = await this.nwVirtual.getChildren('hasBmsDevice');
+    const promises = [];
+    for (const event of events) {
+      const deviceNode = deviceNodes.find((device) => device.getName().get() === event.readeruid);
+      if (!deviceNode) {
+        console.warn(`Device node for event reader UID ${event.readeruid} not found, skipping event ${event.id}`);
+        continue
+      }
+
+      const endpointNodes = await deviceNode.getChildren('hasBmsEndpoint');
+
+      let endpointName;
+      switch (event.eventtype) {
+        case '50': endpointName = "Access_Denied"; break;
+        case '40': endpointName = "Access_Granted"; break;
+        default:
+          console.warn(`Unknown event type ${event.eventtype} for event ${event.id}, skipping`);
+          continue;
+      }
+
+      const endpointNode = endpointNodes.find((endpoint) => endpoint.getName().get() === endpointName);
+      if (!endpointNode) {
+        console.warn(` !! Critical Warning !! Endpoint node ${endpointName} not found for device ${deviceNode.getName().get()}, skipping event ${event.id}`);
+        continue;
+      }
+
+      if (endpointName === "Access_Denied") {
+        // For access denied events , if it doesn't have a identifier we inject -1 as value 
+        // if it has an identifier we inject the userId having that identifier 
+        if (event.useruid === 'null') {
+          promises.push(this.updateEndpoint(endpointNode, -1, Number(event.date)))
+        }
+        else {
+          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date)))
+        }
+      }
+
+      if (endpointName === "Access_Granted") {
+        // For access granted we inject the userId having the identifier 
+        if (event.useruid === 'null') {
+          console.warn(` !! Critical Warning !! Access Granted event with identifier ${event.identifier} but no occupant found, skipping event ${event.id}`);
+          continue;
+        }
+        else {
+          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date)))
+        }
+      }
+    }
+    await Promise.all(promises);
   }
 
   async createOccupantData(carriers: any[]) {
@@ -305,48 +354,13 @@ export class SyncRunPullApi {
   }
 
 
-  async updateEnergyCounterDevices(energyCounterData: IEquipment[]) {
-    const existingDevices = await this.nwVirtual.getChildrenInContext(this.nwContext);
-    for (const ec of existingDevices) {
-      const matchingEc = energyCounterData.find((apiEc) => {
-        return apiEc.name === ec.getName().get();
-      });
-      if (!matchingEc) {
-        continue;
-      }
 
-      const endpoints = await ec.getChildren('hasBmsEndpoint');
-      const connectedEndpoint = endpoints.find((ep) => ep.getName().get() === 'connected');
-      if (connectedEndpoint) {
-        await this.updateEndpoint(connectedEndpoint, matchingEc.connected);
-      }
-      // update endpoints for l1 , l2 , l3 currents and energy consumptions
-      const currentL1Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L1');
-      if (currentL1Endpoint) {
-        await this.updateEndpoint(currentL1Endpoint, matchingEc.values.currents.l1.value);
-      }
-      const currentL2Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L2');
-      if (currentL2Endpoint) {
-        await this.updateEndpoint(currentL2Endpoint, matchingEc.values.currents.l2.value);
-      }
-      const currentL3Endpoint = endpoints.find((ep) => ep.getName().get() === 'Current_L3');
-      if (currentL3Endpoint) {
-        await this.updateEndpoint(currentL3Endpoint, matchingEc.values.currents.l3.value);
-      }
-      const energyConsumptionEndpoint = endpoints.find((ep) => ep.getName().get() === 'Energy_Consumption');
-      if (energyConsumptionEndpoint) {
-        await this.updateEndpoint(energyConsumptionEndpoint, matchingEc.values.energy.value);
-      }
-
-    }
-  }
-
-
-  async updateEndpoint(endpointNode: SpinalNode<any>, newValue: number | string | boolean) {
+  async updateEndpoint(endpointNode: SpinalNode<any>, newValue: number | string | boolean, date?: string | number | Date, currentValueUpdate = false) {
     SpinalGraphService._addNode(endpointNode);
-    await this.nwService.setEndpointValue(endpointNode.getId().get(), newValue);
-    console.log(`Updated endpoint ${endpointNode.getName().get()} with value ${newValue}`);
+    await this.nwService.setEndpointValue(endpointNode.getId().get(), newValue, date);
+    // console.log(`Updated endpoint ${endpointNode.getName().get()} with value ${newValue} at ${date ?? new Date().toISOString()}`);
   }
+
 
   async init(): Promise<void> {
     console.log('Initiating SyncRunPull');
@@ -363,9 +377,8 @@ export class SyncRunPullApi {
       const readers = readerArrays.map(readerArray =>
         recordToObject(readerArray.item)
       );
-      // console.log('Readers:', readers);
-      await this.createReaderDevices(readers);
 
+      await this.createReaderDevices(readers);
       const isMonitored = await isSiteMonitored();
       this.createMonitoringDeviceAndEndpoint(isMonitored);
 
@@ -382,7 +395,7 @@ export class SyncRunPullApi {
 
 
 
-      const eventRecords = await getAllEvents();
+      const eventRecords = await getAllEvents(); // already filtered to keep only access log events.
       console.log('Events fetched:', eventRecords.count);
       const eventArrays = eventRecords.records?.item ?? [] // all events
 
@@ -392,46 +405,21 @@ export class SyncRunPullApi {
 
       console.log('Total events:', events.length);
 
-      // Group events by their eventtype
-      const eventsByType: { [key: string]: any[] } = {};
+      // Group events by their readeruid
+      const eventsByReaderUid: { [key: string]: any[] } = {};
       for (const event of events) {
-        const type = event.eventtype;
-        if (!eventsByType[type]) {
-          eventsByType[type] = [];
+        if (event.readeruid === 'null') continue; // skip events with readeruid null as they are not linked to any reader and we won't be able to update any endpoint with them
+        const readerUid = event.readeruid;
+        if (!eventsByReaderUid[readerUid]) {
+          eventsByReaderUid[readerUid] = [];
         }
-        eventsByType[type].push(event);
+        eventsByReaderUid[readerUid].push(event);
       }
 
 
-      // Now you can use eventsByType, where each key is an eventtype and the value is an array of events of that type
-      //console.log('Grouped events by eventtype:', eventsByType);
-      for (const [eventType, eventsArr] of Object.entries(eventsByType)) {
-        const count = eventsArr.length;
-        const description = eventsArr[0]?.description || 'No description';
-        console.log(`Event type: ${eventType}, count: ${count}, example description: ${description}`);
-      }
-
-      console.log(eventsByType)
-
-      // const alarmRecords = await listAlarms();
-      // console.log('Alarms fetched:', alarmRecords.count);
-      // const alarmArrays = alarmRecords.records?.item ?? [] // all alarms
-
-      // const alarms = alarmArrays.map(alarmArray =>
-      //   recordToObject(alarmArray.item)
-      // );
-      // console.log('Alarms:', alarms);
+      console.log(eventsByReaderUid);
 
 
-
-      // const carrierGroupRecords = await listCarrierGroups();
-      // const carrierGroupArrays = carrierGroupRecords.records.item; // all carrier groups
-
-      // const carrierGroups = carrierGroupArrays.map(carrierGroupArray =>
-      //   recordToObject(carrierGroupArray.item)
-      // );
-
-      // console.log('Carrier Groups:', carrierGroups);
 
 
       await this.ardSession.logout();
