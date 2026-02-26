@@ -163,18 +163,15 @@ export class SyncRunPullApi {
 
     const realNode = SpinalGraphService.getRealNode(endpointInfo.id.get());
     // SpinalGraphService._addNode(realNode);
-
-
-    await this.timeseriesService.pushFromEndpoint(
-      endpointInfo.id.get(),
-      initialValue as number
-    );
-    await attributeService.updateAttribute(
+    await attributeService.createOrUpdateAttrsAndCategories(
       realNode,
       'default',
-      'timeSeries maxDay',
-      { value: '14' }
+      {
+        'timeSeries maxDay': '400'
+      }
     );
+    await this.timeseriesService.getOrCreateTimeSeries(endpointInfo.id.get())
+
     return realNode;
   }
 
@@ -280,13 +277,13 @@ export class SyncRunPullApi {
       }
 
       if (endpointName === "Access_Denied") {
-        // For access denied events , if it doesn't have a identifier we inject -1 as value 
-        // if it has an identifier we inject the userId having that identifier 
+        // For access denied events , if it doesn't have a identifier we inject -1 as value
+        // if it has an identifier we inject the userId having that identifier
         if (event.useruid === 'null') {
-          promises.push(this.updateEndpoint(endpointNode, -1, Number(event.date)))
+          promises.push(this.updateEndpoint(endpointNode, -1, Number(event.date + '000')))
         }
         else {
-          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date)))
+          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date + '000')))
         }
       }
 
@@ -297,7 +294,7 @@ export class SyncRunPullApi {
           continue;
         }
         else {
-          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date)))
+          promises.push(this.updateEndpoint(endpointNode, parseInt(event.useruid), Number(event.date + '000')))
         }
       }
     }
@@ -395,29 +392,7 @@ export class SyncRunPullApi {
 
 
 
-      const eventRecords = await getAllEvents(); // already filtered to keep only access log events.
-      console.log('Events fetched:', eventRecords.count);
-      const eventArrays = eventRecords.records?.item ?? [] // all events
 
-      const events = eventArrays.map(eventArray =>
-        recordToObject(eventArray.item)
-      );
-
-      console.log('Total events:', events.length);
-
-      // Group events by their readeruid
-      const eventsByReaderUid: { [key: string]: any[] } = {};
-      for (const event of events) {
-        if (event.readeruid === 'null') continue; // skip events with readeruid null as they are not linked to any reader and we won't be able to update any endpoint with them
-        const readerUid = event.readeruid;
-        if (!eventsByReaderUid[readerUid]) {
-          eventsByReaderUid[readerUid] = [];
-        }
-        eventsByReaderUid[readerUid].push(event);
-      }
-
-
-      console.log(eventsByReaderUid);
 
 
 
@@ -444,6 +419,29 @@ export class SyncRunPullApi {
       const before = Date.now();
       try {
         console.log('Run...');
+        const eventRecords = await getAllEvents(); // already filtered to keep only access log events.
+        console.log('Events fetched:', eventRecords.count);
+        const eventArrays = eventRecords.records?.item ?? [] // all events
+
+        const events = eventArrays.map(eventArray =>
+          recordToObject(eventArray.item)
+        );
+
+        console.log('Total events:', events.length);
+
+        // Group events by their readeruid
+        const eventsByReaderUid: { [key: string]: any[] } = {};
+        for (const event of events) {
+          if (event.readeruid === 'null') continue; // skip events with readeruid null as they are not linked to any reader and we won't be able to update any endpoint with them
+          const readerUid = event.readeruid;
+          if (!eventsByReaderUid[readerUid]) {
+            eventsByReaderUid[readerUid] = [];
+          }
+          eventsByReaderUid[readerUid].push(event);
+        }
+        console.log(eventsByReaderUid);
+
+        this.updateEndpointsFromEvents(events);
         console.log('... Run finished !');
         this.config.lastSync.set(Date.now());
       } catch (e) {
